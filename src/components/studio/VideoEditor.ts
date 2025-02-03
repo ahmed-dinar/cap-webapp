@@ -23,12 +23,16 @@ import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 const defaultBgColor = 0xffffff;
 
 const shadowBorderConfig = {
+  radius: {
+    name: 'borderRadius3232',
+    size: 6,
+  },
   name: 'videoBorder1232',
   border: {
     enabled: true,
-    thickness: 30,
-    color: 0x00ff00,
-    alpha: 1,
+    thickness: 5,
+    color: 0x000000,
+    alpha: 0.1,
     alignment: 1,
     native: true,
   },
@@ -422,18 +426,32 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     if (this.backgroundConfig.applyBorder) {
       const border = new PIXI.Graphics();
       border.name = shadowBorderConfig.name;
-      border.lineStyle(
-        shadowBorderConfig.border.thickness,
-        shadowBorderConfig.border.color,
-        shadowBorderConfig.border.alpha,
-        shadowBorderConfig.border.alignment,
-        shadowBorderConfig.border.native,
+
+      border.beginFill(shadowBorderConfig.border.color, shadowBorderConfig.border.alpha);
+
+      const borderSize = shadowBorderConfig.border.thickness;
+
+      border.drawRoundedRect(
+        -this.sprite.width / 2 - borderSize,
+        -this.sprite.height / 2 - borderSize,
+        this.sprite.width + borderSize * 2,
+        this.sprite.height + borderSize * 2,
+        shadowBorderConfig.radius.size,
       );
 
-      // Draw border based on sprite dimensions
-      border.drawRect(-this.sprite.width / 2, -this.sprite.height / 2, this.sprite.width, this.sprite.height);
+      border.endFill();
 
-      this.videoContainer.addChild(border);
+      border.beginHole();
+      border.drawRoundedRect(
+        -this.sprite.width / 2,
+        -this.sprite.height / 2,
+        this.sprite.width,
+        this.sprite.height,
+        shadowBorderConfig.radius.size,
+      );
+      border.endHole();
+
+      this.videoContainer.addChildAt(border, 0);
     }
 
     if (this.backgroundConfig.applyShadow) {
@@ -453,7 +471,35 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     console.log('contaier width ', this.videoContainer.scale.x, ' ', this.videoContainer.scale.y);
     console.log('sprite width ', this.sprite.scale.x, ' ', this.sprite.scale.y);
 
+    this.drawBorderRadius();
     this.baseScale = this.videoContainer.scale.x;
+  }
+
+  private drawBorderRadius() {
+    this.removeBorderRadius();
+
+    const mask = new PIXI.Graphics();
+    mask.name = shadowBorderConfig.radius.name;
+    mask.beginFill(0xffffff);
+    mask.drawRoundedRect(
+      -this.sprite.width / 2,
+      -this.sprite.height / 2,
+      this.sprite.width,
+      this.sprite.height,
+      shadowBorderConfig.radius.size,
+    );
+    mask.endFill();
+
+    this.sprite.mask = mask;
+    this.videoContainer.addChild(mask);
+  }
+
+  private removeBorderRadius() {
+    const existingMask = this.videoContainer.getChildByName(shadowBorderConfig.radius.name);
+    if (existingMask) {
+      this.videoContainer.removeChild(existingMask);
+      this.sprite.mask = null;
+    }
   }
 
   /**
