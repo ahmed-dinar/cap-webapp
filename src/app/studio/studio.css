@@ -1,0 +1,23 @@
+
+.custom-scroll::-webkit-scrollbar {
+    height: 5px !important;
+    width: 5px !important;
+}
+
+.custom-scroll::-webkit-scrollbar-track {
+    background-color:  #F9FAFB !important;
+    border-radius: 3px;
+}
+
+.custom-scroll::-webkit-scrollbar-thumb {
+    background-color: #9CA3AF !important;
+}
+
+.dark .custom-scroll::-webkit-scrollbar-thumb {
+    background-color: #71717A !important;
+}
+
+.dark .custom-scroll::-webkit-scrollbar-track {
+    background-color: #374151 !important;
+    border-radius: 3px;
+}
