@@ -19,7 +19,7 @@ import VideoExporter from '@/lib/encoder/VideoExporter';
 import { defaultBackgroundConfig } from '@/components/studio/studio.data';
 import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 
-const defaultBgColor = '#000000';
+const defaultBgColor = 0xffffff;
 
 const shadowBorderConfig = {
   name: 'videoBorder1232',
@@ -84,6 +84,7 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
 
     this.canvasContainer.style.width = `${adjustedDimension.width}px`;
 
+    // 1. Set up renderer
     this.renderer = PIXI.autoDetectRenderer({
       view: canvas,
       width: adjustedDimension.width,
@@ -91,24 +92,33 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
       backgroundColor: '#000',
     });
 
+    // 2. Create stage and container
     this.stage = new PIXI.Container();
     this.videoContainer = new PIXI.Container();
 
+    // 3. Create and set up video sprite
     const videoTexture = PIXI.Texture.from(video);
     this.sprite = new PIXI.Sprite(videoTexture);
 
-    this.sprite.anchor.set(0.5);
-
-    this.sprite.x = adjustedDimension.width / 2;
-    this.sprite.y = adjustedDimension.height / 2;
-
+    // 4. Set up sprite first
     this.sprite.width = adjustedDimension.width;
     this.sprite.height = adjustedDimension.height;
+    this.sprite.anchor.set(0.5);
 
+    // 5. Add sprite to container
     this.videoContainer.addChild(this.sprite);
+
+    // 6. Set container dimensions based on sprite
+    this.videoContainer.width = this.sprite.width;
+    this.videoContainer.height = this.sprite.height;
+
+    // 7. Center container in stage
+    this.videoContainer.position.set(this.renderer.width / 2, this.renderer.height / 2);
+
+    // 8. Add container to stage
     this.stage.addChild(this.videoContainer);
 
-    this.baseScale = this.sprite.scale.x;
+    this.baseScale = 1;
 
     this.updateBackground();
     this.init();
@@ -133,9 +143,11 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
   }
 
   public resize(ratio: number, isFit = true) {
+    // Calculate new dimensions
     const newWidth = this.viewHeight * ratio;
     const newHeight = this.viewHeight;
 
+    // Update canvas container and renderer
     this.canvasContainer.style.width = `${newWidth}px`;
     this.renderer.resize(newWidth, newHeight);
 
@@ -143,6 +155,10 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     const videoHeight = this.videoDimension.height;
     const videoAspectRatio = videoWidth / videoHeight;
 
+
+    this.renderer.resolution
+
+    // Calculate scale
     let scale;
     if (ratio >= videoAspectRatio) {
       // Going to wider aspect ratio - always FIT
@@ -157,19 +173,24 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
       }
     }
 
-    // Update sprite dimensions
     this.sprite.width = videoWidth * scale;
     this.sprite.height = videoHeight * scale;
 
-    // Center the sprite
-    this.sprite.x = newWidth / 2;
-    this.sprite.y = newHeight / 2;
+    this.videoContainer.position.set(newWidth / 2, newHeight / 2);
 
-    this.baseScale = this.sprite.scale.x;
+    const currentBackgroundScale =
+      this.backgroundConfig.backgroundSize === 'None' ? 1 : backgroundSizes[this.backgroundConfig.backgroundSize];
+
+    // Apply additional background scaling if any
+    this.videoContainer.scale.set(currentBackgroundScale);
+
+    // Store aspect ratio and fit mode
     this.aspectRatio = ratio;
     this.fitOnResize = isFit;
 
-    // this.updateBackground();
+    // Update background and render
+    this.updateBackground();
+    // this.renderer.render(this.stage);
   }
 
   public render() {
@@ -202,10 +223,10 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     this.segmentIds.add(segment.id);
 
     const scale = segment.data;
-    this.baseScale = this.sprite.scale.x;
+    this.baseScale = this.videoContainer.scale.x;
 
     const targetScale = this.baseScale * scale;
-    if (this.sprite.scale.x === targetScale) {
+    if (this.videoContainer.scale.x === targetScale) {
       return;
     }
 
@@ -214,12 +235,12 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
 
     console.log('zooming segment: ', segment);
 
-    gsap.to(this.sprite.scale, {
+    gsap.to(this.videoContainer.scale, {
       x: targetScale,
       y: targetScale,
       duration: 1,
     });
-    gsap.to(this.sprite.position, {
+    gsap.to(this.videoContainer.position, {
       x: x,
       y: y,
       duration: 1,
@@ -263,14 +284,21 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     });
   }
 
+  private removeBg() {
+    const existingBg = this.stage.getChildAt(0);
+    if (existingBg && existingBg !== this.videoContainer) {
+      this.stage.removeChild(existingBg);
+    }
+  }
+
   private resetZoom(duration?: number) {
-    gsap.to(this.sprite.scale, {
+    gsap.to(this.videoContainer.scale, {
       x: this.baseScale,
       y: this.baseScale,
       duration: 1,
       delay: duration || 0,
     });
-    gsap.to(this.sprite.position, {
+    gsap.to(this.videoContainer.position, {
       x: this.renderer.width / 2,
       y: this.renderer.height / 2,
       duration: 1,
@@ -289,6 +317,8 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     const scale =
       this.backgroundConfig.backgroundSize === 'None' ? 1 : backgroundSizes[this.backgroundConfig.backgroundSize];
 
+    this.removeBg();
+
     if (this.backgroundConfig.backgroundSize === 'None') {
       this.renderer.background.color = defaultBgColor;
     } else if (this.backgroundConfig.backgroundType === 'Color') {
@@ -304,11 +334,6 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
         blurFilter.blur = backgroundBlurs[this.backgroundConfig.backgroundBlur];
         blurFilter.quality = 2;
         colorSprite.filters = [blurFilter];
-
-        const existingBg = this.stage.getChildAt(0);
-        if (existingBg && existingBg !== this.videoContainer) {
-          this.stage.removeChild(existingBg);
-        }
 
         this.stage.addChildAt(colorSprite, 0);
       }
@@ -331,18 +356,14 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
           bgSprite.filters = [blurFilter];
         }
 
-        const existingBg = this.stage.getChildAt(0);
-        if (existingBg && existingBg !== this.videoContainer) {
-          this.stage.removeChild(existingBg);
-        }
-
         this.stage.addChildAt(bgSprite, 0);
       }
     }
 
-    this.videoContainer.position.set(this.renderer.width / 2, this.renderer.height / 2);
-    this.videoContainer.pivot.set(this.sprite.width / 2, this.sprite.height / 2);
     this.videoContainer.scale.set(scale);
+
+    // Ensure container stays centered after scaling
+    this.videoContainer.position.set(this.renderer.width / 2, this.renderer.height / 2);
 
     this.updateBorderAndShadowBackground();
   }
@@ -365,11 +386,10 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
         shadowBorderConfig.border.alignment,
         shadowBorderConfig.border.native,
       );
-      console.log('Sprite dimensions:', this.sprite.width, this.sprite.height);
-      console.log('Sprite scale:', this.sprite.scale.x, this.sprite.scale.y);
-      console.log('Video container dimensions:', this.videoContainer.width, this.videoContainer.height);
-      console.log('Video container scale:', this.videoContainer.scale.x, this.videoContainer.scale.y);
-      border.drawRect(0, 0, this.sprite.width, this.sprite.height);
+
+      // Draw border based on sprite dimensions
+      border.drawRect(-this.sprite.width / 2, -this.sprite.height / 2, this.sprite.width, this.sprite.height);
+
       this.videoContainer.addChild(border);
     }
 
@@ -379,12 +399,18 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
         alpha: shadowBorderConfig.shadow.alpha,
         blur: shadowBorderConfig.shadow.blur,
         offset: { x: shadowBorderConfig.shadow.offsetX, y: shadowBorderConfig.shadow.offsetY },
-        // angle: Math.atan2(shadowBorderConfig.shadow.offsetY, shadowBorderConfig.shadow.offsetX),
         quality: 2,
       });
 
       this.videoContainer.filters = [shadowFilter];
     }
+
+    console.log('sprite width ', this.sprite.width, ' ', this.sprite.height);
+    console.log('contaier width ', this.videoContainer.width, ' ', this.videoContainer.height);
+    console.log('contaier width ', this.videoContainer.scale.x, ' ', this.videoContainer.scale.y);
+    console.log('sprite width ', this.sprite.scale.x, ' ', this.sprite.scale.y);
+
+    this.baseScale = this.videoContainer.scale.x;
   }
 
   /**
