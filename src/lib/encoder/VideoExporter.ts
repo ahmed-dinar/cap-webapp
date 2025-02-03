@@ -3,7 +3,6 @@
 import { FileSystemWritableFileStreamTarget, Muxer as Mp4Muxer } from 'mp4-muxer';
 import * as PIXI from 'pixi.js';
 import { ExportConfig, ExportProgress, ResolutionItem } from '@/components/studio/studio.types';
-import { Resolutions } from '@/components/studio/studio.data';
 import { videoSupportedCodec } from '@/lib/encoder/encoder.utils';
 import { roundToEven } from '@/components/studio/studio.utils';
 import VideoExporterWorker from '@/lib/encoder/VideoExporterWorker';
@@ -17,49 +16,21 @@ interface ResolutionCalculation {
 
 class VideoExporter extends VideoExporterWorker {
   private video: HTMLVideoElement;
-  private sprite: PIXI.Sprite;
   private stage: PIXI.Container;
   private pixiRenderer: PIXI.IRenderer;
   private config: ExportConfig;
-  private isFit: boolean;
 
-  constructor(
-    video: HTMLVideoElement,
-    sprite: PIXI.Sprite,
-    stage: PIXI.Container,
-    pixiRenderer: PIXI.IRenderer,
-    config: ExportConfig,
-    isFit: boolean,
-  ) {
+  constructor(video: HTMLVideoElement, stage: PIXI.Container, pixiRenderer: PIXI.IRenderer, config: ExportConfig) {
     super();
 
     this.video = video;
-    this.sprite = sprite;
     this.stage = stage;
     this.pixiRenderer = pixiRenderer;
     this.config = config;
-    this.isFit = isFit;
   }
 
-  public async encode(onProgress: (percent: ExportProgress) => void) {
-    let originalState;
-
+  public async encode(outputDimensions: ResolutionCalculation, onProgress: (percent: ExportProgress) => void) {
     try {
-      // Calculate current aspect ratio from the container
-      const currentAspectRatio = this.pixiRenderer.width / this.pixiRenderer.height;
-
-      // Calculate output dimensions based on selected resolution
-      const targetResolution = Resolutions[this.config.resolution];
-      const outputDimensions = this.calculateResolutionWithAspectRatio(
-        targetResolution,
-        currentAspectRatio,
-        this.sprite.texture.baseTexture.width,
-        this.sprite.texture.baseTexture.height,
-        this.isFit,
-      );
-
-      console.log('outputDimensions --->> ', outputDimensions);
-
       const videoConfig = await this.initializeEncoder(outputDimensions);
       const writableStream = await this.setupExportStream();
 
@@ -80,10 +51,6 @@ class VideoExporter extends VideoExporterWorker {
       });
 
       encoder.configure(videoConfig);
-
-      // Store and update state
-      originalState = this.storeOriginalState();
-      this.updateSpriteForExport(outputDimensions);
 
       // Process frames
       const totalFrames = Math.ceil(this.video.duration * videoConfig.framerate!);
@@ -109,7 +76,7 @@ class VideoExporter extends VideoExporterWorker {
           duration: frameDuration * 1000,
         });
 
-        await encoder.encode(frame);
+        encoder.encode(frame);
         frame.close();
 
         onProgress({
@@ -128,12 +95,11 @@ class VideoExporter extends VideoExporterWorker {
       console.error('Export failed:', error);
       throw error;
     } finally {
-      // Restore original state
-      this.restoreOriginalState(originalState);
+      /* empty */
     }
   }
 
-  private calculateResolutionWithAspectRatio(
+  public calculateResolutionWithAspectRatio(
     targetResolution: ResolutionItem,
     currentAspectRatio: number,
     videoWidth: number,
@@ -212,38 +178,6 @@ class VideoExporter extends VideoExporterWorker {
     });
 
     return await fileHandle.createWritable();
-  }
-
-  private storeOriginalState() {
-    return {
-      width: this.sprite.width,
-      height: this.sprite.height,
-      x: this.sprite.x,
-      y: this.sprite.y,
-      rendererWidth: this.pixiRenderer.width,
-      rendererHeight: this.pixiRenderer.height,
-    };
-  }
-
-  private updateSpriteForExport(outputDimensions: ResolutionCalculation) {
-    this.pixiRenderer.resize(outputDimensions.width, outputDimensions.height);
-    const scale = outputDimensions.scale;
-    this.sprite.width = this.sprite.texture.baseTexture.width * scale;
-    this.sprite.height = this.sprite.texture.baseTexture.height * scale;
-    this.sprite.x = outputDimensions.width / 2;
-    this.sprite.y = outputDimensions.height / 2;
-  }
-
-  private restoreOriginalState(originalState: any) {
-    if (!originalState) {
-      return;
-    }
-    this.sprite.width = originalState.width;
-    this.sprite.height = originalState.height;
-    this.sprite.x = originalState.x;
-    this.sprite.y = originalState.y;
-    this.pixiRenderer.resize(originalState.rendererWidth, originalState.rendererHeight);
-    this.video.currentTime = 0;
   }
 }
 

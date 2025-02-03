@@ -4,6 +4,7 @@ import * as PIXI from 'pixi.js';
 import gsap from 'gsap';
 
 import {
+  AspectRatioType,
   backgroundBlurs,
   BackgroundConfig,
   backgroundSizes,
@@ -16,7 +17,7 @@ import {
 import { validDuration } from '@/components/studio/studio.utils';
 import EditorEventEmitter, { EditorEventMap } from '@/lib/encoder/EditorEventEmitter';
 import VideoExporter from '@/lib/encoder/VideoExporter';
-import { defaultBackgroundConfig } from '@/components/studio/studio.data';
+import { defaultBackgroundConfig, Resolutions } from '@/components/studio/studio.data';
 import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 
 const defaultBgColor = 0xffffff;
@@ -60,6 +61,7 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
   private baseScale: number = 1;
   private fitOnResize: boolean = true;
   private backgroundConfig: BackgroundConfig = defaultBackgroundConfig;
+  private selectedAspectRatio?: AspectRatioType;
 
   // Zoom editing properties
   private isEditingZoom: boolean = false;
@@ -142,10 +144,33 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     this.updateBackground();
   }
 
-  public resize(ratio: number, isFit = true) {
-    // Calculate new dimensions
-    const newWidth = this.viewHeight * ratio;
-    const newHeight = this.viewHeight;
+  public resize({
+    selectedAspectRatio,
+    isFit = true,
+  }: {
+    selectedAspectRatio: AspectRatioType;
+    isFit: boolean;
+    dimension?: Dimension;
+  }) {
+    this.selectedAspectRatio = selectedAspectRatio;
+    const aspectRatio = selectedAspectRatio.value;
+    this.doResize({ aspectRatio, isFit });
+  }
+
+  private doResize({ aspectRatio, isFit, dimension }: { aspectRatio: number; isFit: boolean; dimension?: Dimension }) {
+    let newWidth;
+    let newHeight;
+    let ratio;
+
+    if (dimension) {
+      newWidth = dimension.width;
+      newHeight = dimension.height;
+      ratio = newWidth / newHeight;
+    } else {
+      newWidth = this.viewHeight * aspectRatio;
+      newHeight = this.viewHeight;
+      ratio = aspectRatio;
+    }
 
     // Update canvas container and renderer
     this.canvasContainer.style.width = `${newWidth}px`;
@@ -154,9 +179,6 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     const videoWidth = this.videoDimension.width;
     const videoHeight = this.videoDimension.height;
     const videoAspectRatio = videoWidth / videoHeight;
-
-
-    this.renderer.resolution
 
     // Calculate scale
     let scale;
@@ -190,7 +212,6 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
 
     // Update background and render
     this.updateBackground();
-    // this.renderer.render(this.stage);
   }
 
   public render() {
@@ -199,8 +220,30 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
   }
 
   async encode(config: ExportConfig, onProgress: (progress: ExportProgress) => void) {
-    const encoder = new VideoExporter(this.video, this.sprite, this.stage, this.renderer, config, this.fitOnResize);
-    await encoder.encode(onProgress);
+    const encoder = new VideoExporter(this.video, this.stage, this.renderer, config);
+
+    const currentDimension: Dimension = { width: this.renderer.width, height: this.renderer.height };
+    const currentAspectRatio = currentDimension.width / currentDimension.height;
+
+    const targetResolution = Resolutions[config.resolution];
+    const outputDimensions = encoder.calculateResolutionWithAspectRatio(
+      targetResolution,
+      currentAspectRatio,
+      this.sprite.texture.baseTexture.width,
+      this.sprite.texture.baseTexture.height,
+      this.fitOnResize,
+    );
+
+    try {
+      this.doResize({
+        aspectRatio: outputDimensions.width / outputDimensions.height,
+        dimension: { width: outputDimensions.width, height: outputDimensions.height },
+        isFit: this.fitOnResize,
+      });
+      await encoder.encode(outputDimensions, onProgress);
+    } finally {
+      this.doResize({ aspectRatio: currentAspectRatio, dimension: currentDimension, isFit: this.fitOnResize });
+    }
   }
 
   private getAdjustedViewDimension(dimension: Dimension): Dimension {

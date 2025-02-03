@@ -65,7 +65,7 @@ export interface BackgroundConfig {
   applyShadow: boolean;
 }
 
-export interface AspectRationType {
+export interface AspectRatioType {
   label: string;
   name: string;
   value: number;

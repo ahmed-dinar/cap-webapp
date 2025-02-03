@@ -1,18 +1,13 @@
 'use client';
 
 import { create } from 'zustand';
-import {
-  AspectRationType,
-  BackgroundConfig,
-  MenuType,
-  TimelineSegment,
-} from '@/components/studio/studio.types';
+import { AspectRatioType, BackgroundConfig, MenuType, TimelineSegment } from '@/components/studio/studio.types';
 import { defaultBackgroundConfig } from '@/components/studio/studio.data';
 
 type StudioState = {
   activeMenu: MenuType;
   segments: TimelineSegment[];
-  aspectRatio?: AspectRationType;
+  aspectRatio?: AspectRatioType;
   applyZoom: boolean;
   activeSegmentId?: string;
   isPlaying: boolean;
@@ -28,7 +23,7 @@ type Actions = {
   updateSegment: (id: string, segment: Partial<TimelineSegment>) => void;
   deleteSegment: (id: string) => void;
   setSegments: (segments: TimelineSegment[]) => void;
-  setAspectRatio: (ratio?: AspectRationType) => void;
+  setAspectRatio: (ratio?: AspectRatioType) => void;
   setApplyZoom: (zoom: boolean) => void;
   setIsPlaying: (playing: boolean) => void;
   setIsMute: (mute: boolean) => void;
@@ -61,7 +56,7 @@ const useStudioStore = create<StudioState & Actions>((set, get) => {
     setSegments: (segments: TimelineSegment[]) => {
       set({ segments });
     },
-    setAspectRatio: (ratio?: AspectRationType) => {
+    setAspectRatio: (ratio?: AspectRatioType) => {
       set({ aspectRatio: ratio });
     },
     setApplyZoom: (zoom: boolean) => {

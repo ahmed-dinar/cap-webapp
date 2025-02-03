@@ -1,5 +1,5 @@
 import {
-  AspectRationType,
+  AspectRatioType,
   BackgroundConfig,
   BitRates,
   ResolutionItem,
@@ -47,7 +47,7 @@ export const Resolutions: { [K in ResolutionKey]: ResolutionItem } = {
   },
 } as const;
 
-export const aspectRatioList: AspectRationType[] = [
+export const aspectRatioList: AspectRatioType[] = [
   {
     label: '16:9',
     name: 'Widescreen (HD)',

@@ -111,7 +111,7 @@ const StudioEditor = () => {
   useEffect(() => {
     console.log();
     if (aspectRatio && editorRef.current) {
-      editorRef.current.resize(aspectRatio.value, fitOnResize);
+      editorRef.current.resize({ selectedAspectRatio: aspectRatio, isFit: fitOnResize });
     }
   }, [aspectRatio, fitOnResize]);
 
