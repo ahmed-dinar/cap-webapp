@@ -13,6 +13,9 @@ import {
   ExportProgress,
   PointXY,
   TimelineSegment,
+  VideoSegment,
+  ZOOM_SCALES,
+  zoomConfigData,
 } from '@/components/studio/studio.types';
 import { validDuration } from '@/components/studio/studio.utils';
 import EditorEventEmitter, { EditorEventMap } from '@/lib/encoder/EditorEventEmitter';
@@ -50,6 +53,7 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
   private renderer: PIXI.IRenderer;
   private stage: PIXI.Container;
   private videoContainer: PIXI.Container;
+  private rippleContainer: PIXI.Container;
   private sprite: PIXI.Sprite;
   private canvas: HTMLCanvasElement;
   private canvasContainer: HTMLDivElement;
@@ -66,6 +70,10 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
   private fitOnResize: boolean = true;
   private backgroundConfig: BackgroundConfig = defaultBackgroundConfig;
   private selectedAspectRatio?: AspectRatioType;
+  private mouseSegments: VideoSegment[] = [];
+  private clickSegments: VideoSegment[] = [];
+  private screenDimension: Dimension;
+  private mouseEffectActive: boolean = false;
 
   // Zoom editing properties
   private isEditingZoom: boolean = false;
@@ -74,6 +82,16 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
   private previewContext: CanvasRenderingContext2D | null = null;
   private clickHandler: ((event: PIXI.FederatedPointerEvent) => void) | null = null;
   private isZoomed: boolean = false;
+
+  private readonly MAX_ZOOM = 3;
+  private readonly MIN_ZOOM = 1;
+  private readonly ZOOM_DURATION = 1; // seconds
+  private readonly PAN_DURATION = 0.5; // seconds
+  private currentZoom = 1;
+  private targetZoom = 1;
+
+  private debugGraphics: PIXI.Graphics;
+  private mouseTracker: PIXI.Container;
 
   constructor(canvas: HTMLCanvasElement, canvasContainer: HTMLDivElement, video: HTMLVideoElement) {
     super();
@@ -125,6 +143,16 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     this.stage.addChild(this.videoContainer);
 
     this.baseScale = 1;
+
+    // this.debugGraphics = new PIXI.Graphics();
+    // this.stage.addChild(this.debugGraphics);
+    this.rippleContainer = new PIXI.Container();
+    this.stage.addChild(this.rippleContainer);
+
+    this.mouseTracker = new PIXI.Container();
+    this.stage.addChild(this.mouseTracker);
+
+    this.screenDimension = { width: this.renderer.width, height: this.renderer.height };
 
     this.updateBackground();
     this.init();
@@ -310,14 +338,263 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     return segment;
   }
 
+  public setMouseSegments(mouseSegments: VideoSegment[]) {
+    this.mouseSegments = mouseSegments;
+  }
+
+  public setClickSegments(clickSegments: VideoSegment[]) {
+    this.clickSegments = clickSegments;
+  }
+
+  public setScreenDimension(d?: Dimension) {
+    this.screenDimension = d;
+  }
+
+  private getInterpolatedPosition(time: number): { x: number; y: number } | null {
+    if (!this.mouseSegments || this.mouseSegments.length < 2) return null;
+
+    for (let i = 0; i < this.mouseSegments.length - 1; i++) {
+      if (Math.abs(time - this.mouseSegments[i].time) < 0.02)
+        return { x: this.mouseSegments[i].x, y: this.mouseSegments[i].y };
+      if (time >= this.mouseSegments[i].time && time <= this.mouseSegments[i + 1].time) {
+        const t = (time - this.mouseSegments[i].time) / (this.mouseSegments[i + 1].time - this.mouseSegments[i].time);
+
+        const x = this.mouseSegments[i].x + (this.mouseSegments[i + 1].x - this.mouseSegments[i].x) * t;
+        const y = this.mouseSegments[i].y + (this.mouseSegments[i + 1].y - this.mouseSegments[i].y) * t;
+
+        return { x, y };
+      }
+    }
+
+    return null;
+  }
+
+  private mapClickToPixi(x: number, y: number) {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.renderer.screen.width / rect.width;
+    const scaleY = this.renderer.screen.height / rect.height;
+    return {
+      x: (x - rect.left) * scaleX,
+      y: (y - rect.top) * scaleY,
+    };
+  }
+
+  createRipple(x, y) {
+    // 1. Adjust for container's center position
+    const containerCenterX = this.videoContainer.position.x;
+    const containerCenterY = this.videoContainer.position.y;
+
+    // 2. Calculate position relative to container center
+    const relativeX = (x - containerCenterX) / this.baseScale;
+    const relativeY = (y - containerCenterY) / this.baseScale;
+
+    const ripple = new PIXI.Graphics();
+    ripple.beginFill('#B91C1C', 0.5);
+    ripple.drawCircle(0, 0, 10);
+    ripple.endFill();
+
+    // 3. Apply the relative position accounting for scale
+    ripple.position.set(containerCenterX + relativeX * this.baseScale, containerCenterY + relativeY * this.baseScale);
+
+    // 4. Parent to stage level container
+    this.rippleContainer.addChild(ripple);
+
+    // 5. Scale animation proportionally
+    const baseSize = 100;
+    gsap.to(ripple, {
+      alpha: 0,
+      width: baseSize * this.baseScale,
+      height: baseSize * this.baseScale,
+      duration: 1,
+      ease: 'power2.out',
+      onComplete: () => {
+        this.rippleContainer.removeChild(ripple);
+      },
+    });
+  }
+
+  // private createRipple(x: number, y: number) {
+  //   if (this.mouseEffectActive) return;
+  //   this.mouseEffectActive = true;
+  //   const ripple = new PIXI.Graphics();
+  //   ripple.beginFill('#B91C1C', 0.5); // White color with 50% opacity
+  //   ripple.drawCircle(0, 0, 10); // Initial small circle
+  //   ripple.endFill();
+  //   ripple.position.set(x * this.baseScale, y * this.baseScale);
+  //   this.rippleContainer.addChild(ripple);
+  //
+  //   const baseExpandSize = 100; // Original expansion size
+  //   const scaledExpandSize = baseExpandSize;
+  //
+  //   // Animate the ripple using GSAP
+  //   gsap.to(ripple, {
+  //     alpha: 0.5, // Fade out the ripple
+  //     width: scaledExpandSize, // Expand the width of the circle
+  //     height: scaledExpandSize, // Expand the height of the circle
+  //     duration: 1, // Animation duration in seconds
+  //     ease: 'power2.out',
+  //     onComplete: () => {
+  //       this.rippleContainer.removeChild(ripple); // Remove the ripple when animation is complete
+  //       this.mouseEffectActive = false;
+  //     },
+  //   });
+  // }
+
+  private screenToContainer(screenX: number, screenY: number) {
+    const bounds = this.videoContainer.getBounds();
+
+    // Calculate relative position from container's top-left
+    const relativeX = screenX - bounds.x;
+    const relativeY = screenY - bounds.y;
+
+    // Convert to local container coordinates
+    return {
+      x: relativeX / this.videoContainer.scale.x,
+      y: relativeY / this.videoContainer.scale.y,
+    };
+  }
+
+  private screenToContainer2(screenX: number, screenY: number) {
+    // Create a point with screen coordinates
+    const screenPoint = new PIXI.Point(screenX, screenY);
+
+    // Convert screen coordinates to container's local coordinates
+    const localPos = this.sprite.toLocal(screenPoint);
+
+    console.log({
+      screen: { x: screenX, y: screenY },
+      local: localPos,
+    });
+
+    return localPos;
+  }
+
+  private containerToScreen(localX: number, localY: number) {
+    // Create a point with local coordinates
+    const localPoint = new PIXI.Point(localX, localY);
+
+    // Convert local coordinates to global (screen) coordinates
+    const globalPos = this.videoContainer.toGlobal(localPoint);
+
+    return globalPos;
+  }
+
+  private mapRecordingToRendererCoords(x: number, y: number): { x: number; y: number } {
+    // Calculate scale factors between recording screen and current renderer
+    const scaleX = this.sprite.width / this.screenDimension.width;
+    const scaleY = this.sprite.height / this.screenDimension.height;
+
+    // Map coordinates
+    const mappedX = x * scaleX;
+    const mappedY = y * scaleY;
+
+    // Convert to stage coordinates (relative to center)
+    return {
+      x: mappedX,
+      y: mappedY,
+    };
+  }
+
+  private drawDot(targetX: number, targetY: number) {
+    const dot = new PIXI.Graphics();
+    dot.beginFill(0xff0000);
+    dot.drawCircle(0, 0, 5);
+    dot.endFill();
+    dot.position.set(targetX, targetY);
+    this.mouseTracker.addChild(dot);
+  }
+
+  public triggerRipples(time: number): void {
+    if (this.clickSegments.length === 0) {
+      return;
+    }
+
+    const found = this.clickSegments.find((segment) => Math.abs(time - segment.time) < 0.1);
+    if (!found) {
+      return;
+    }
+
+    console.log('found click ', found, ' time ', time, ' scale ', this.baseScale);
+
+    const mappedCoords = this.mapRecordingToRendererCoords(found.x, found.y);
+    this.createRipple(mappedCoords.x, mappedCoords.y);
+    // this.drawDot(mappedCoords.x, mappedCoords.y);
+  }
+
+  public zoomAndFollow(time: number): void {
+    // if (time < 7) return;
+
+    if (this.isZoomed) {
+      return;
+    }
+    this.isZoomed = true;
+
+    const screenPos = this.getInterpolatedPosition(time);
+    if (!screenPos || screenPos.x < 0) return;
+
+    const mappedCoords = this.mapRecordingToRendererCoords(screenPos.x, screenPos.y);
+    // const mappedCoords = {...screenPos};
+
+    // Calculate target position (inverse of container position because we move container opposite to follow point)
+    const targetX = mappedCoords.x;
+    const targetY = mappedCoords.y;
+
+    // Kill any existing tweens to avoid conflicts
+    // gsap.killTweensOf(this.videoContainer.position);
+    // gsap.killTweensOf(this.videoContainer.scale);
+
+    // console.log('drawing ', targetX, ' ', targetY);
+    //
+    // First just draw dots to verify positions
+
+    const baseZoomScale = 1.2;
+    // gsap.killTweensOf(this.videoContainer.position);
+    // gsap.killTweensOf(this.videoContainer.scale);
+
+    // Calculate cursor position relative to video container
+    const containerCenterX = this.videoContainer.position.x;
+    const containerCenterY = this.videoContainer.position.y;
+
+    const relativeX = (mappedCoords.x - containerCenterX) / this.baseScale;
+    const relativeY = (mappedCoords.y - containerCenterY) / this.baseScale;
+
+    // Set pivot to cursor position
+    this.videoContainer.pivot.set(relativeX, relativeY);
+
+    // Adjust position to maintain the same visual position after pivot change
+
+    const targetScale = this.baseScale * baseZoomScale;
+
+    gsap.to(this.videoContainer.scale, {
+      x: targetScale,
+      y: targetScale,
+      duration: 1,
+      ease: 'power1.out',
+      onComplete: () => {
+        // this.isZoomed = false;
+      },
+    });
+
+    gsap.to(this.videoContainer.position, {
+      x: mappedCoords.x,
+      y: mappedCoords.y,
+      duration: 1,
+      ease: 'power1.out',
+      onComplete: () => {
+        // this.isZoomed = false;
+      },
+    });
+  }
+
   private init() {
     this.video.addEventListener('timeupdate', () => {
-      this.currentTime = this.video.currentTime;
-      this.emit('timeUpdated', this.currentTime);
-      this.zoomSegment(this.currentTime);
+      const time = this.video.currentTime;
+      this.currentTime = time;
+      this.emit('timeUpdated', time);
+      this.zoomSegment(time);
       // zoomSegment(video.currentTime);
-      // // zoomAndFollow(video.currentTime);
-      // // triggerRipples(video.currentTime);
+      // this.zoomAndFollow(this.currentTime);
+      this.triggerRipples(time);
       if (validDuration(this.video.duration)) {
         if (this.duration === 0 && this.video.duration > 0) {
           this.duration = this.video.duration;
@@ -325,9 +602,13 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
         }
       }
 
-      if (this.currentTime === 0 || this.currentTime === this.duration) {
+      if (time === 0 || time === this.duration) {
         this.cleanUpEffects();
       }
+    });
+
+    PIXI.Ticker.shared.add(() => {
+      this.renderer.render(this.stage);
     });
   }
 
@@ -339,6 +620,7 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
   }
 
   private resetZoom(duration?: number) {
+    this.videoContainer.pivot.set(0, 0);
     gsap.to(this.videoContainer.scale, {
       x: this.baseScale,
       y: this.baseScale,
@@ -408,20 +690,26 @@ class VideoEditor extends EditorEventEmitter<EditorEventMap> {
     }
 
     this.videoContainer.scale.set(scale);
-
-    // Ensure container stays centered after scaling
     this.videoContainer.position.set(this.renderer.width / 2, this.renderer.height / 2);
+    this.baseScale = this.videoContainer.scale.x;
 
     this.updateBorderAndShadowBackground();
   }
 
-  private updateBorderAndShadowBackground() {
+  private removeBorder() {
     const existingBorder = this.videoContainer.children.find((child) => child.name === shadowBorderConfig.name);
     if (existingBorder) {
       this.videoContainer.removeChild(existingBorder);
     }
-
     this.videoContainer.filters = [];
+  }
+
+  private updateBorderAndShadowBackground() {
+    this.removeBorder();
+
+    if (this.baseScale === 1) {
+      return;
+    }
 
     if (this.backgroundConfig.applyBorder) {
       const border = new PIXI.Graphics();

@@ -3,6 +3,8 @@ import { PointXY } from '@/components/studio/studio.types';
 export type EditorEventMap = {
   timeUpdated: number;
   duration: number;
+  playing: boolean;
+  pause: boolean;
   zoomPointUpdated: PointXY;
 };
 
@@ -16,7 +18,7 @@ class EditorEventEmitter<T extends Record<string, unknown>> {
     this.listeners[event]!.push(listener);
   }
 
-  emit<K extends keyof T>(event: K, data: T[K]) {
+  async emit<K extends keyof T>(event: K, data: T[K]) {
     this.listeners[event]?.forEach((listener) => listener(data));
   }
 

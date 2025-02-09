@@ -35,7 +35,7 @@ const StudioDesign = () => {
   };
 
   return (
-    <Accordion type="multiple" defaultValue={['patten']} className="w-full">
+    <Accordion type="single" defaultValue={'patten'} className="w-full">
       <AccordionItem value="size" className="border-none">
         <AccordionTrigger className="">
           <h3 className="font-normal text-base flex flex-row items-center gap-2">
@@ -88,9 +88,9 @@ const StudioDesign = () => {
                     htmlFor="terms1"
                     className="text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Fit Content on Resize
+                    Scale on Resize
                   </label>
-                  <p className="text-xs text-muted-foreground">Content will scale with the size change</p>
+                  <p className="text-xs text-muted-foreground">Content scales dynamically based on size changes</p>
                 </div>
               </div>
 
@@ -101,9 +101,11 @@ const StudioDesign = () => {
                     htmlFor="terms2"
                     className="text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Static Content
+                    Fixed Layout
                   </label>
-                  <p className="text-xs text-muted-foreground">Content will be in same on</p>
+                  <p className="text-xs text-muted-foreground">
+                    Content remains fixed in its original layout, overflow cropped
+                  </p>
                 </div>
               </div>
             </div>

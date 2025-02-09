@@ -73,7 +73,7 @@ export interface AspectRatioType {
   sizes: AspectRationSize[];
 }
 
-export type ZOOM_SCALES = 1.2 | 1.5 | 2 | 2.5 | 3;
+export type ZOOM_SCALES = 1.2 | 1.5 | 2 | 2.5 | 3 | 3.5 | 4;
 
 export type ZoomConfig = {
   [K in ZOOM_SCALES]: {
@@ -116,6 +116,20 @@ export const zoomConfigData: ZoomConfig = {
   },
   3: {
     name: 'Max',
+    scaleDuration: 1.5,
+    pivotDuration: 1,
+    positionDuration: 3,
+    minDistance: 20,
+  },
+  3.5: {
+    name: 'Max2',
+    scaleDuration: 1.5,
+    pivotDuration: 1,
+    positionDuration: 3,
+    minDistance: 20,
+  },
+  4: {
+    name: 'Max3',
     scaleDuration: 1.5,
     pivotDuration: 1,
     positionDuration: 3,

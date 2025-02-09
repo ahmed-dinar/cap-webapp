@@ -8,8 +8,8 @@ import {
 
 export const defaultBackgroundConfig: BackgroundConfig = {
   backgroundType: 'Color',
-  background: '#FC0000',
-  backgroundSize: 'Small',
+  background: '#FFAB91',
+  backgroundSize: 'ExtraSmall',
   backgroundBlur: 'Subtle',
   applyBorder: true,
   applyShadow: true,

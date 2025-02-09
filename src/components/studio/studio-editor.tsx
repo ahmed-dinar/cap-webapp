@@ -12,16 +12,17 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, BringToFront, Palette, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { PointXY, ZOOM_SCALES, zoomConfigData } from '@/components/studio/studio.types';
+import { ZOOM_SCALES, zoomConfigData } from '@/components/studio/studio.types';
 import useVideoStore from '@/lib/store/useVideoStore';
 import { Input } from '@/components/ui/input';
 import { TooltipProvider } from '@radix-ui/react-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Progress } from '@/components/ui/progress';
-import VideoEditor from '@/components/studio/VideoEditor';
 import useExportStore from '@/lib/store/useExportStore';
+import VideoClip2 from '@/lib/studio/v2/VideoClip2';
+import Studio from '@/lib/studio/studio';
 
-const initialHeight = 600;
+const initialHeight = 550;
 
 const StudioEditor = () => {
   const exportConfig = useExportStore((state) => state.settings);
@@ -50,137 +51,213 @@ const StudioEditor = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const videoUrl = useVideoStore((state) => state.videoUrl);
-  const setVideoUrl = useVideoStore((state) => state.setVideoUrl);
-  // const durationSeconds = useVideoStore((state) => state.durationSeconds);
-  const setDuration = useVideoStore((state) => state.setDurationSeconds);
+  const videoSourceData = useVideoStore((state) => state.data);
+  const setVideoSourceData = useVideoStore((state) => state.setVideoSourceData);
+
   const setCurrentTime = useStudioStore((state) => state.setCurrentTime);
-  // // const currentTime = useStudioStore((state) => state.currentTime);
-  // const mouseSegments = useVideoStore((state) => state.mouseSegments);
-  // const clickSegments = useVideoStore((state) => state.clickSegments);
   const aspectRatio = useStudioStore((state) => state.aspectRatio);
 
   const [exporting, setExporting] = useState<boolean>(false);
   const [exportPercent, setExportPercent] = useState<number>(0);
 
-  const editorRef = useRef<VideoEditor>(null);
+  const studioRef = useRef<Studio>(null);
+
+  // function adjustPreview() {
+  //   console.log('adjustPreview');
+  //   if (!containerRef.current || !studioRef.current) {
+  //     return;
+  //   }
+  //
+  //   const { width, height } = studioRef.current.getSettings();
+  //   const scale = Math.min(containerRef.current.clientWidth / width, containerRef.current.clientHeight / height);
+  //
+  //   containerRef.current.style.width = `${width}px`;
+  //   containerRef.current.style.height = `${height}px`;
+  //   containerRef.current.style.transform = `scale(${scale})`;
+  //   containerRef.current.style.transformOrigin = `center`;
+  // }
+  //
+  // useEffect(() => {
+  //   const observer = new ResizeObserver(([entry]) => {
+  //     adjustPreview();
+  //   });
+  //
+  //   observer.observe(document.body);
+  //   return () => observer.disconnect();
+  // }, []);
 
   useEffect(() => {
-    if (!videoRef.current || !canvasRef.current || !containerRef.current || !videoUrl?.length) {
+    console.log('durationSeconds, videoUrl ', videoSourceData.durationSeconds, ' ', videoSourceData.videoUrl);
+    if (
+      !videoRef.current ||
+      !canvasRef.current ||
+      !containerRef.current ||
+      !videoSourceData.videoUrl?.length ||
+      videoSourceData.durationSeconds <= 0
+    ) {
       return;
     }
 
-    function updateSegmentZoomPoint(xy: PointXY) {
-      console.log('updateSegmentZoomPoint ', xy, ' activeSegmentId ', activeSegmentIdRef.current);
-      if (!activeSegmentIdRef.current) {
-        return;
-      }
+    const signal = new AbortController();
 
-      const segment = segmentsRef.current.find((segment) => segment.id === activeSegmentIdRef.current);
-      if (!segment) {
-        return;
-      }
+    async function videoReady() {
+      if (!studioRef.current) {
+        const width = 1920;
+        const height = 1080;
+        studioRef.current = new Studio({
+          width: width,
+          height: height,
+          contentWidth: width,
+          contentHeight: height,
+          fps: 60,
+        });
 
-      updateSegment(segment.id, { xy });
+        studioRef.current.on('timeUpdated', (time) => setCurrentTime(time));
+        studioRef.current.on('playing', () => setIsPlaying(true));
+        studioRef.current.on('pause', () => setIsPlaying(false));
+
+        studioRef.current.setDuration(videoSourceData.durationSeconds);
+        studioRef.current.setMouseMovements(videoSourceData.mouseSegments || []);
+        studioRef.current.setMouseClicks(videoSourceData.clickSegments || []);
+
+        const videoClip = new VideoClip2(videoRef.current!, {
+          startTime: 0,
+          endTime: videoSourceData.durationSeconds * 1000,
+        });
+
+        studioRef.current.addClip(videoClip);
+
+        studioRef.current.addPreview(canvasRef.current!, initialHeight);
+        // studioRef.current.play();
+      }
     }
 
-    console.log('app && videoRef.current');
+    videoRef.current.addEventListener('loadedmetadata', () => videoReady(), { signal: signal.signal });
 
-    function videoReady() {
-      console.log('video ready');
-      editorRef.current = new VideoEditor(canvasRef.current!, containerRef.current!, videoRef.current!);
+    return () => {
+      signal.abort();
+    };
+  }, [setCurrentTime, videoSourceData]);
 
-      editorRef.current.on('timeUpdated', (time) => setCurrentTime(time));
-      editorRef.current.on('duration', (duration) => setDuration(duration));
-      editorRef.current.on('zoomPointUpdated', updateSegmentZoomPoint);
-
-      const animate = () => {
-        if (editorRef.current) {
-          editorRef.current.render();
-          requestAnimationFrame(animate);
-        }
-      };
-
-      animate();
-      setIsPlaying(true);
-    }
-
-    videoRef.current.addEventListener('loadedmetadata', () => videoReady());
-  }, [setCurrentTime, setDuration, setIsPlaying, updateSegment, videoUrl]);
+  // useEffect(() => {
+  //   if (!videoRef.current || !canvasRef.current || !containerRef.current || !videoUrl?.length || durationSeconds <= 0) {
+  //     return;
+  //   }
+  //
+  //   function updateSegmentZoomPoint(xy: PointXY) {
+  //     console.log('updateSegmentZoomPoint ', xy, ' activeSegmentId ', activeSegmentIdRef.current);
+  //     if (!activeSegmentIdRef.current) {
+  //       return;
+  //     }
+  //
+  //     const segment = segmentsRef.current.find((segment) => segment.id === activeSegmentIdRef.current);
+  //     if (!segment) {
+  //       return;
+  //     }
+  //
+  //     updateSegment(segment.id, { xy });
+  //   }
+  //
+  //   console.log('app && videoRef.current');
+  //
+  //   function videoReady() {
+  //     console.log('video ready');
+  //
+  //     editorRef.current = new VideoEditor(canvasRef.current!, containerRef.current!, videoRef.current!);
+  //
+  //     editorRef.current.on('timeUpdated', (time) => setCurrentTime(time));
+  //     editorRef.current.on('duration', (duration) => setDuration(duration));
+  //     editorRef.current.on('zoomPointUpdated', updateSegmentZoomPoint);
+  //
+  //     editorRef.current.setClickSegments(clickSegmentsRef.current ?? []);
+  //     editorRef.current.setMouseSegments(mouseSegmentsRef.current ?? []);
+  //     editorRef.current.setScreenDimension(screenDimensionRef.current ?? undefined);
+  //
+  //     const animate = () => {
+  //       if (editorRef.current) {
+  //         editorRef.current.render();
+  //         requestAnimationFrame(animate);
+  //       }
+  //     };
+  //
+  //     animate();
+  //     setIsPlaying(true);
+  //   }
+  //
+  //   videoRef.current.addEventListener('loadedmetadata', () => videoReady());
+  // }, [durationSeconds, setCurrentTime, setDuration, setIsPlaying, updateSegment, videoUrl]);
 
   useEffect(() => {
     console.log();
-    if (aspectRatio && editorRef.current) {
-      editorRef.current.resize({ selectedAspectRatio: aspectRatio, isFit: fitOnResize });
+    if (aspectRatio && studioRef.current) {
+      studioRef.current.resize({ selectedAspectRatio: aspectRatio, isFit: fitOnResize });
     }
   }, [aspectRatio, fitOnResize]);
 
   useEffect(() => {
-    if (videoRef.current) {
+    if (studioRef.current) {
       if (isPlaying) {
-        videoRef.current.play();
+        studioRef.current.play();
       } else {
-        videoRef.current.pause();
+        studioRef.current.pause();
       }
     }
   }, [isPlaying]);
 
-  useEffect(() => {
-    async function handleExport() {
-      console.log('handleExport');
-
-      if (!editorRef.current || !videoRef.current) {
-        return;
-      }
-
-      videoRef.current.pause();
-      videoRef.current.currentTime = 0;
-
-      setExportPercent(0);
-      setExporting(true);
-
-      try {
-        await editorRef.current.encode(exportConfig, (progress) => setExportPercent(progress.progress));
-        console.log('done export');
-      } catch (e) {
-        console.log('err ', e);
-      } finally {
-        setExporting(false);
-        setExportPercent(0);
-      }
-    }
-
-    if (doExport && !exporting) {
-      handleExport();
-    }
-  }, [doExport, exporting, setDoExport, exportConfig]);
+  // useEffect(() => {
+  //   async function handleExport() {
+  //     console.log('handleExport');
+  //
+  //     // if (!editorRef.current || !videoRef.current) {
+  //     if (!editorRef.current) {
+  //       return;
+  //     }
+  //
+  //     // videoRef.current.pause();
+  //     // videoRef.current.currentTime = 0;
+  //
+  //     setExportPercent(0);
+  //     setExporting(true);
+  //
+  //     try {
+  //       await editorRef.current.encode(exportConfig, (progress) => setExportPercent(progress.progress));
+  //       console.log('done export');
+  //     } catch (e) {
+  //       console.log('err ', e);
+  //     } finally {
+  //       setExporting(false);
+  //       setExportPercent(0);
+  //     }
+  //   }
+  //
+  //   if (doExport && !exporting) {
+  //     handleExport();
+  //   }
+  // }, [doExport, exporting, setDoExport, exportConfig]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
-      setVideoUrl(url);
+      setVideoSourceData({ durationSeconds: 0, videoUrl: url });
     }
   };
 
-  function onTimeUpdate(time: number) {
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.currentTime = time;
+  async function onTimeUpdate(time: number) {
+    const studio = studioRef.current;
+    if (studio) {
+      await studio.seek(time);
       setIsPlaying(false);
-    }
-    if (editorRef.current) {
-      editorRef.current.setCurrentTime(time);
     }
   }
 
-  useEffect(() => {
-    console.log('segments ', segments);
-    segmentsRef.current = segments;
-    if (editorRef.current) {
-      editorRef.current.setSegments(segments);
-    }
-  }, [segments]);
+  // useEffect(() => {
+  //   console.log('segments ', segments);
+  //   segmentsRef.current = segments;
+  //   if (editorRef.current) {
+  //     editorRef.current.setSegments(segments);
+  //   }
+  // }, [segments]);
 
   useEffect(() => {
     console.log('activeSegmentId ', activeSegmentId);
@@ -190,29 +267,43 @@ const StudioEditor = () => {
   useEffect(() => {
     console.log('backgroundConfig ', backgroundConfig);
     backgroundConfigRef.current = backgroundConfig;
-    if (editorRef.current) {
-      editorRef.current.setBackgroundConfig(backgroundConfig);
+    if (studioRef.current) {
+      studioRef.current.setBackgroundConfig(backgroundConfig);
     }
   }, [backgroundConfig]);
 
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.muted = isMute;
-    }
-  }, [isMute]);
+  // useEffect(() => {
+  //   if (videoRef.current) {
+  //     videoRef.current.muted = isMute;
+  //   }
+  // }, [isMute]);
+
+  // useEffect(() => {
+  //   mouseSegmentsRef.current = mouseSegments;
+  //   if (editorRef.current && mouseSegments) {
+  //     editorRef.current.setMouseSegments(mouseSegments);
+  //   }
+  // }, [mouseSegments]);
+  //
+  // useEffect(() => {
+  //   clickSegmentsRef.current = clickSegments;
+  //   if (editorRef.current && clickSegments) {
+  //     editorRef.current.setClickSegments(clickSegments);
+  //   }
+  // }, [clickSegments]);
 
   const activeSegment = segments.find((segment) => segment.id === activeSegmentId);
 
-  useEffect(() => {
-    if (!editorRef.current) {
-      return;
-    }
-    if (activeSegment) {
-      editorRef.current.setZoomEditing(true, previewCanvasRef.current);
-    } else {
-      editorRef.current.setZoomEditing(false);
-    }
-  }, [activeSegment]);
+  // useEffect(() => {
+  //   if (!studioRef.current) {
+  //     return;
+  //   }
+  //   if (activeSegment) {
+  //     studioRef.current.setZoomEditing(true, previewCanvasRef.current);
+  //   } else {
+  //     studioRef.current.setZoomEditing(false);
+  //   }
+  // }, [activeSegment]);
 
   return (
     <>
@@ -241,30 +332,56 @@ const StudioEditor = () => {
               <div className={`relative flex flex-col h-full items-center p-2`}>
                 <div
                   ref={containerRef}
-                  className={`${!videoUrl?.length && 'bg-muted'} flex flex-col items-center justify-center relative rounded-lg border border-border`}
+                  className="relative w-full flex items-center justify-center flex-col rounded-md"
                   style={{
                     height: `${initialHeight}px`,
-                    width: '1080px',
                   }}
                 >
-                  {!videoUrl?.length && (
-                    <div className="absolute top-1/2 left-0 w-full flex flex-row gap-3 items-center justify-center -translate-y-1/2">
-                      <div className="flex w-[270px] h-[160px] bg-background rounded-xl justify-center items-center shadow-lg">
-                        <Input
-                          type="file"
-                          className="bg-white h-full w-full text-center items-center justify-center rounded-xl cursor-pointer"
-                          accept="video/*"
-                          onChange={handleFileChange}
-                        />
-                      </div>
-                      <div className="flex p-16 bg-background rounded-xl cursor-pointer shadow-lg">
-                        <p className="text-2xl">Record screen</p>
-                      </div>
-                    </div>
-                  )}
-                  <canvas ref={canvasRef} className={`w-full h-full border border-border rounded`} />
+                  <canvas ref={canvasRef} className={`border border-border h-full rounded-md`} />
                 </div>
-                <video ref={videoRef} src={videoUrl} className="hidden" />
+
+                {!videoSourceData.videoUrl?.length && (
+                  <div className="absolute top-1/2 left-0 w-full flex flex-row gap-3 items-center justify-center -translate-y-1/2">
+                    <div className="flex w-[270px] h-[160px] bg-background rounded-xl justify-center items-center shadow-lg">
+                      <Input
+                        type="file"
+                        className="bg-white h-full w-full text-center items-center justify-center rounded-xl cursor-pointer"
+                        accept="video/*"
+                        onChange={handleFileChange}
+                      />
+                    </div>
+                    <div className="flex p-16 bg-background rounded-xl cursor-pointer shadow-lg">
+                      <p className="text-2xl">Record screen</p>
+                    </div>
+                  </div>
+                )}
+
+                {/*<div*/}
+                {/*  ref={containerRef}*/}
+                {/*  className={`${!videoUrl?.length && 'bg-muted'} flex flex-col items-center justify-center relative rounded-lg border border-blue-500`}*/}
+                {/*  style={{*/}
+                {/*    height: `${initialHeight}px`,*/}
+                {/*    width: 'auto',*/}
+                {/*  }}*/}
+                {/*>*/}
+                {/*  {!videoUrl?.length && (*/}
+                {/*    <div className="absolute top-1/2 left-0 w-full flex flex-row gap-3 items-center justify-center -translate-y-1/2">*/}
+                {/*      <div className="flex w-[270px] h-[160px] bg-background rounded-xl justify-center items-center shadow-lg">*/}
+                {/*        <Input*/}
+                {/*          type="file"*/}
+                {/*          className="bg-white h-full w-full text-center items-center justify-center rounded-xl cursor-pointer"*/}
+                {/*          accept="video/*"*/}
+                {/*          onChange={handleFileChange}*/}
+                {/*        />*/}
+                {/*      </div>*/}
+                {/*      <div className="flex p-16 bg-background rounded-xl cursor-pointer shadow-lg">*/}
+                {/*        <p className="text-2xl">Record screen</p>*/}
+                {/*      </div>*/}
+                {/*    </div>*/}
+                {/*  )}*/}
+                {/*  <canvas ref={canvasRef} className={`w-full h-full object-contain border border-red-400 rounded`} />*/}
+                {/*</div>*/}
+                <video ref={videoRef} src={videoSourceData.videoUrl} className="hidden" />
               </div>
             </ResizablePanel>
             <ResizableHandle withHandle={false} />
@@ -393,7 +510,7 @@ const StudioEditor = () => {
           </ResizablePanelGroup>
         </ResizablePanel>
         <ResizableHandle withHandle={false} />
-        <ResizablePanel minSize={2} maxSize={30}>
+        <ResizablePanel defaultSize={20} minSize={2} maxSize={30}>
           <div className="flex w-full h-full">
             <Timeline onTimeUpdate={onTimeUpdate} />
           </div>

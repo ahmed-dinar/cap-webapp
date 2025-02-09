@@ -48,7 +48,7 @@ const Timeline = ({ onTimeUpdate }: Props) => {
   const isMute = useStudioStore((state) => state.isMute);
   const setIsMute = useStudioStore((state) => state.setIsMute);
 
-  const duration = useVideoStore((state) => state.durationSeconds);
+  const duration = useVideoStore((state) => state.data?.durationSeconds);
 
   const [timelineWidth, setTimelineWidth] = useState<number>(0);
   const timelineRef = useRef<HTMLDivElement>(null);

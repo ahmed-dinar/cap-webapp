@@ -12,7 +12,7 @@ const StudioMotion = () => {
   const setApplyZoom = useStudioStore((state) => state.setApplyZoom);
 
   return (
-    <Accordion type="multiple" defaultValue={['zoom', 'click']} className="w-full">
+    <Accordion type="single" className="w-full">
       <AccordionItem value="zoom" className="border-none">
         <AccordionTrigger className="">
           <h3 className="font-medium text-sm">Zoom</h3>

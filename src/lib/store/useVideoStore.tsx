@@ -1,40 +1,35 @@
 'use client';
 
 import { create } from 'zustand';
-import { VideoSegment } from '@/components/studio/studio.types';
+import { Dimension, VideoSegment } from '@/components/studio/studio.types';
 
-type VideoState = {
+type VideoStateData = {
   videoUrl?: string;
   durationSeconds: number;
   mouseSegments?: VideoSegment[];
   clickSegments?: VideoSegment[];
+  screenDimension?: Dimension;
+};
+
+type VideoState = {
+  data: VideoStateData;
 };
 
 type Actions = {
-  setVideoUrl: (url?: string) => void;
-  setDurationSeconds: (durationSeconds: number) => void;
-  setMouseSegments: (segments: VideoSegment[]) => void;
-  setClickSegments: (segments: VideoSegment[]) => void;
+  setVideoSourceData: (data: VideoStateData) => void;
 };
 
 const initialState: VideoState = {
-  durationSeconds: 0,
+  data: {
+    durationSeconds: 0,
+  },
 };
 
 const useVideoStore = create<VideoState & Actions>((set) => {
   return {
     ...initialState,
-    setVideoUrl: (url?: string) => {
-      set({ videoUrl: url });
-    },
-    setDurationSeconds: (durationSeconds: number) => {
-      set({ durationSeconds });
-    },
-    setMouseSegments: (segments: VideoSegment[]) => {
-      set({ mouseSegments: segments });
-    },
-    setClickSegments: (segments: VideoSegment[]) => {
-      set({ clickSegments: segments });
+    setVideoSourceData: (data: VideoStateData) => {
+      set({ data });
     },
   };
 });
